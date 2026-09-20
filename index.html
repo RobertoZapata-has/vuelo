@@ -10,6 +10,7 @@
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<script src="https://cdn.jsdelivr.net/npm/satellite.js@5.0.0/dist/satellite.min.js" defer></script>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Barlow:wght@400;600&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -121,6 +122,8 @@ dialog h2{margin:0 0 12px;font:700 26px var(--cond)}
     <label class="field">Temperatura máxima (°C)<input name="tMax" type="number" step="1"></label>
     <label class="field">Prob. de lluvia máxima (%)<input name="rainMax" type="number" step="5" min="0" max="100"></label>
     <label class="field">Kp máximo<input name="kpMax" type="number" step="1" min="1" max="9"></label>
+    <label class="field">Satélites GNSS mínimos<input name="minSats" type="number" step="1" min="4" max="20"></label>
+    <label class="field">Altura mínima del satélite (°)<input name="mask" type="number" step="5" min="5" max="45"></label>
     <label class="field">Permitir vuelo de noche<select name="night"><option value="0">No</option><option value="1">Sí</option></select></label>
     <p class="hint">Valores iniciales pensados para el DJI Mini SE (249 g, resiste viento nivel 5, opera entre 0 y 40 °C). La zona amarilla empieza al 80 % de cada límite.</p>
     <div class="row">
@@ -132,7 +135,7 @@ dialog h2{margin:0 0 12px;font:700 26px var(--cond)}
 
 <script>
 /* ---------- Configuración ---------- */
-const MINI_SE = {alt:120, windMax:8, gustMax:10, tMin:0, tMax:40, rainMax:50, kpMax:5, night:0};
+const MINI_SE = {alt:120, windMax:8, gustMax:10, tMin:0, tMax:40, rainMax:50, kpMax:5, night:0, minSats:7, mask:10};
 const store = {
   get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch{return d}},
   set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}
@@ -164,6 +167,51 @@ async function fetchKp(){
     if(Array.isArray(rows[0])) return rows.slice(1).map(x=>({ts:toTs(x[0]),kp:+x[1]}));
     return rows.map(o=>({ts:toTs(o.time_tag),kp:+o.kp}));
   }catch{ return []; }   // si falla, la app sigue sin Kp
+}
+
+let SATS = null;   // órbitas GNSS ya interpretadas
+
+async function loadTLE(){
+  const cached = store.get('tle', null);
+  let txt = cached && Date.now()-cached.at < 24*3600e3 ? cached.txt : null;
+  if(!txt){
+    const r = await fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=gnss&FORMAT=tle');
+    if(!r.ok) throw new Error('TLE '+r.status);
+    txt = await r.text();
+    store.set('tle',{at:Date.now(), txt});
+  }
+  const L = txt.split(/\r?\n/).filter(x=>x.trim());
+  const out = [];
+  for(let i=0;i+2<L.length;i+=3){
+    try{ const rec = satellite.twoline2satrec(L[i+1], L[i+2]); if(!rec.error) out.push(rec); }catch{}
+  }
+  return out;
+}
+
+function satsAt(ts){
+  if(!SATS || !SATS.length || !window.satellite) return null;
+  const d = new Date(ts), gmst = satellite.gstime(d);
+  const obs = {longitude:loc.lon*Math.PI/180, latitude:loc.lat*Math.PI/180, height:0.8};
+  const mask = cfg.mask*Math.PI/180;
+  let vis=0, blk=0;
+  for(const rec of SATS){
+    try{
+      const pv = satellite.propagate(rec, d);
+      if(!pv || !pv.position) continue;
+      const el = satellite.ecfToLookAngles(obs, satellite.eciToEcf(pv.position, gmst)).elevation;
+      if(el >= mask) vis++; else if(el > 0) blk++;
+    }catch{}
+  }
+  return {vis, blk};
+}
+
+async function applySats(){
+  try{ SATS = await loadTLE(); }catch{ SATS = []; return; }
+  for(const h of data.hours){
+    const s = satsAt(h.ts);
+    if(s){ h.sats = s.vis; h.blocked = s.blk; Object.assign(h, evaluate(h)); }
+  }
+  render();
 }
 
 function build(w, kp){
@@ -215,6 +263,11 @@ function evaluate(h){
     if(h.kp>=cfg.kpMax){ r.push([2,`Kp ${fmt(h.kp)}: GPS y brújula poco confiables`]); L.kp=2; }
     else if(h.kp>=cfg.kpMax-1){ r.push([1,`Kp ${fmt(h.kp)}: actividad geomagnética moderada`]); L.kp=1; }
     else L.kp=0;
+  }
+  if(h.sats!=null){
+    if(h.sats < cfg.minSats){ r.push([2,`Solo ${h.sats} satélites GNSS sobre ${cfg.mask}°`]); L.sats=2; }
+    else if(h.sats < cfg.minSats+3){ r.push([1,`Pocos satélites GNSS (${h.sats})`]); L.sats=1; }
+    else L.sats=0;
   }
   if(!h.isDay){ r.push([cfg.night?1:2,'Es de noche']); L.night=cfg.night?1:2; }
 
@@ -284,6 +337,12 @@ function render(){
       <div class="v">${fmt(h.temp,0)} <small>°C</small></div><div class="s">Punto de rocío ${fmt(h.dew,0)} °C</div></div>
     <div class="tile ${lv('rain')}"><div class="k">Lluvia</div>
       <div class="v">${h.rain??'—'} <small>%</small></div><div class="s">${SKY(h.code)}</div></div>
+    <div class="tile" style="grid-column:1/-1"><div class="k">Clima</div>
+      <div class="v">${SKY(h.code)}</div><div class="s">${h.cloud}% de nubes · ${h.rain??'—'}% de lluvia · ${fmt(h.temp,0)} °C</div></div>
+    <div class="tile ${lv('sats')}"><div class="k">Satélites visibles</div>
+      <div class="v">${h.sats??'…'}</div><div class="s">Sobre ${cfg.mask}° de altura · mínimo ${cfg.minSats}</div></div>
+    <div class="tile"><div class="k">Satélites bloqueados</div>
+      <div class="v">${h.blocked??'…'}</div><div class="s">Bajos, tapados por cerros o casas</div></div>
     <div class="tile"><div class="k">Nubosidad</div>
       <div class="v">${h.cloud} <small>%</small></div><div class="s">Base estimada ${fmt(Math.max(0,h.base),0)} m</div></div>
     <div class="tile ${lv('vis')}"><div class="k">Visibilidad</div>
@@ -308,7 +367,7 @@ async function load(){
   if(!data) $('#app').innerHTML = '<p class="msg">Cargando pronóstico…</p>';
   try{
     const [w,kp] = await Promise.all([fetchWeather(), fetchKp()]);
-    data = build(w, kp); render();
+    data = build(w, kp); render(); applySats();
   }catch(e){
     $('#app').innerHTML = `<p class="msg">No se pudo descargar el pronóstico. Revisá la conexión y tocá Reintentar.<br><br>
       <button class="btn primary" id="retry">Reintentar</button></p>`;
