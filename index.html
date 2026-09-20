@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1F4E6B">
+<title>Pronóstico de vuelo</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Barlow:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#EEF2F4; --ink:#1C2A33; --muted:#5E6E78; --card:#FFFFFF; --line:#D5DDE2;
+  --sky:#1F4E6B; --go:#2E8B57; --warn:#C8901A; --no:#C0432F;
+  --go-bg:#E3F2E9; --warn-bg:#FBF0D8; --no-bg:#F8E1DC;
+  --cond:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
+  --body:"Barlow",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#141C21;--ink:#E6ECEF;--muted:#94A3AC;--card:#1D282F;--line:#2C3A43;
+  --go-bg:#16332A;--warn-bg:#3A2F14;--no-bg:#3D1F1A;--sky:#2B6A8F}
+}
+*,*::before,*::after{box-sizing:inherit}
+html{background:var(--bg)}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 var(--body);-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--sky);outline-offset:2px}
+.wrap{max-width:560px;margin:0 auto;padding:0 14px 28px}
+
+.top{display:flex;align-items:center;gap:10px;padding:14px 0 10px}
+.loc{flex:1;text-align:left;background:none;border:0;padding:4px 0}
+.loc b{display:block;font:700 26px/1.1 var(--cond)}
+.loc span{font-size:13px;color:var(--muted)}
+.icon-btn{width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--card);font-size:20px}
+
+/* El veredicto es el elemento protagonista */
+.verdict{border-radius:18px;padding:18px 18px 16px;color:#fff;background:var(--sky);transition:background .25s}
+.verdict.l0{background:var(--go)} .verdict.l1{background:var(--warn)} .verdict.l2{background:var(--no)}
+.verdict .when{margin:0;font-size:14px;opacity:.9}
+.verdict h1{margin:2px 0 6px;font:700 44px/1 var(--cond);letter-spacing:.2px}
+.verdict ul{margin:0;padding:0;list-style:none;font-size:15px}
+.verdict li{padding:2px 0}
+.verdict li::before{content:"· ";opacity:.8}
+
+.days{display:flex;gap:6px;overflow-x:auto;padding:14px 0 8px;scrollbar-width:none}
+.days button{flex:0 0 auto;border:1px solid var(--line);background:var(--card);border-radius:10px;padding:6px 10px;font-size:14px;position:relative}
+.days button[aria-pressed=true]{border-color:var(--ink);font-weight:600}
+.days .bar{display:flex;height:4px;margin-top:4px;border-radius:2px;overflow:hidden}
+.days .bar i{flex:1}
+
+.hours{display:flex;gap:3px;overflow-x:auto;padding-bottom:6px;scroll-snap-type:x proximity}
+.hours button{flex:0 0 40px;scroll-snap-align:start;border:0;border-radius:8px;padding:6px 0 5px;font:600 15px var(--cond);text-align:center}
+.hours .l0{background:var(--go-bg)} .hours .l1{background:var(--warn-bg)} .hours .l2{background:var(--no-bg)}
+.hours button i{display:block;height:4px;margin:4px 8px 0;border-radius:2px}
+.hours .l0 i{background:var(--go)} .hours .l1 i{background:var(--warn)} .hours .l2 i{background:var(--no)}
+.hours button[aria-pressed=true]{outline:2px solid var(--ink);outline-offset:-2px}
+.hours button.past{opacity:.45}
+.window{margin:6px 0 14px;font-size:15px;color:var(--muted)}
+.window b{color:var(--ink)}
+
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.tile{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--line);border-radius:12px;padding:10px 12px}
+.tile.l0{border-left-color:var(--go)} .tile.l1{border-left-color:var(--warn)} .tile.l2{border-left-color:var(--no)}
+.tile .k{font-size:13px;color:var(--muted)}
+.tile .v{font:700 30px/1.1 var(--cond);display:flex;align-items:center;gap:6px}
+.tile .v small{font-size:17px;font-weight:500}
+.tile .s{font-size:12.5px;color:var(--muted)}
+.arrow{display:inline-block;font-size:24px;transition:transform .3s}
+
+.foot{margin-top:18px;font-size:13px;color:var(--muted);display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.foot button{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:5px 10px}
+.msg{padding:30px 0;text-align:center;color:var(--muted)}
+
+dialog{border:0;border-radius:16px;padding:18px;width:min(92vw,440px);background:var(--card);color:var(--ink)}
+dialog::backdrop{background:rgba(10,20,26,.55)}
+dialog h2{margin:0 0 12px;font:700 26px var(--cond)}
+.field{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:15px}
+.field input,.field select{width:92px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit;text-align:right}
+.search{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font:inherit}
+.results{list-style:none;margin:8px 0;padding:0}
+.results button{width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:10px 2px}
+.results small{color:var(--muted)}
+.row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:9px 14px}
+.btn.primary{background:var(--sky);border-color:var(--sky);color:#fff}
+.hint{font-size:12.5px;color:var(--muted);margin:10px 0 0}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <button class="loc" id="locBtn" aria-label="Cambiar ubicación"><b id="locName">Mendoza</b><span id="locSub">Tocá para cambiar la ubicación</span></button>
+    <button class="icon-btn" id="setBtn" aria-label="Límites del dron">⚙</button>
+  </header>
+
+  <div id="app"><p class="msg">Cargando pronóstico…</p></div>
+</div>
+
+<dialog id="locDlg">
+  <h2>Ubicación</h2>
+  <button class="btn primary" id="gpsBtn" style="width:100%">Usar mi ubicación actual</button>
+  <p class="hint">O buscá un lugar:</p>
+  <input class="search" id="q" type="search" placeholder="Ej.: Potrerillos, Cacheuta, Luján de Cuyo" autocomplete="off">
+  <ul class="results" id="res"></ul>
+  <div class="row"><button class="btn" id="locClose">Cerrar</button></div>
+</dialog>
+
+<dialog id="setDlg">
+  <h2>Límites de vuelo</h2>
+  <form id="setForm" method="dialog">
+    <label class="field">Altura de vuelo (m)<select name="alt"><option>10</option><option>80</option><option>120</option></select></label>
+    <label class="field">Viento máximo (m/s)<input name="windMax" type="number" step="0.5" min="1"></label>
+    <label class="field">Ráfagas máximas (m/s)<input name="gustMax" type="number" step="0.5" min="1"></label>
+    <label class="field">Temperatura mínima (°C)<input name="tMin" type="number" step="1"></label>
+    <label class="field">Temperatura máxima (°C)<input name="tMax" type="number" step="1"></label>
+    <label class="field">Prob. de lluvia máxima (%)<input name="rainMax" type="number" step="5" min="0" max="100"></label>
+    <label class="field">Kp máximo<input name="kpMax" type="number" step="1" min="1" max="9"></label>
+    <label class="field">Permitir vuelo de noche<select name="night"><option value="0">No</option><option value="1">Sí</option></select></label>
+    <p class="hint">Valores iniciales pensados para el DJI Mini SE (249 g, resiste viento nivel 5, opera entre 0 y 40 °C). La zona amarilla empieza al 80 % de cada límite.</p>
+    <div class="row">
+      <button class="btn" type="button" id="resetBtn">Restaurar Mini SE</button>
+      <button class="btn primary" value="save">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+/* ---------- Configuración ---------- */
+const MINI_SE = {alt:120, windMax:8, gustMax:10, tMin:0, tMax:40, rainMax:50, kpMax:5, night:0};
+const store = {
+  get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch{return d}},
+  set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}
+};
+let cfg = {...MINI_SE, ...store.get('cfg',{})};
+let loc = store.get('loc',{name:'Mendoza',sub:'Mendoza, Argentina',lat:-32.889,lon:-68.845});
+let data = null, selDay = null, selIdx = null;
+
+const $ = s => document.querySelector(s);
+const fmt = (n,d=1) => n==null||isNaN(n) ? '—' : Number(n).toLocaleString('es-AR',{maximumFractionDigits:d});
+const LEVEL_TXT = ['Apto para volar','Volar con precaución','No volar'];
+
+/* ---------- Datos ---------- */
+async function fetchWeather(){
+  const hourly = ['temperature_2m','dew_point_2m','precipitation_probability','weather_code','cloud_cover',
+    'visibility','wind_speed_10m','wind_speed_80m','wind_speed_120m','wind_direction_80m','wind_direction_120m',
+    'wind_direction_10m','wind_gusts_10m','is_day'].join(',');
+  const p = new URLSearchParams({latitude:loc.lat, longitude:loc.lon, hourly, daily:'sunrise,sunset',
+    wind_speed_unit:'ms', timezone:'auto', forecast_days:7});
+  const r = await fetch('https://api.open-meteo.com/v1/forecast?'+p);
+  if(!r.ok) throw new Error('Open-Meteo respondió '+r.status);
+  return r.json();
+}
+async function fetchKp(){
+  try{
+    const r = await fetch('https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json');
+    const rows = await r.json();
+    const toTs = s => { s=String(s).replace(' ','T'); return Date.parse(/Z$|[+-]\d\d:?\d\d$/.test(s)?s:s+'Z'); };
+    if(Array.isArray(rows[0])) return rows.slice(1).map(x=>({ts:toTs(x[0]),kp:+x[1]}));
+    return rows.map(o=>({ts:toTs(o.time_tag),kp:+o.kp}));
+  }catch{ return []; }   // si falla, la app sigue sin Kp
+}
+
+function build(w, kp){
+  const H = w.hourly, off = w.utc_offset_seconds*1000, alt = String(cfg.alt);
+  const hours = H.time.map((t,i)=>{
+    const ts = Date.parse(t+'Z') - off;
+    const wind = H['wind_speed_'+alt+'m'][i], w10 = H.wind_speed_10m[i], g10 = H.wind_gusts_10m[i];
+    const gust = alt==='10' ? g10 : wind + Math.max(0, g10 - w10);   // ráfaga estimada en altura
+    const k = kp.filter(x=>x.ts<=ts && ts<x.ts+3*3600e3).pop();
+    const h = {t, ts, day:t.slice(0,10), hour:+t.slice(11,13), wind, gust,
+      dir:H['wind_direction_'+alt+'m'][i], temp:H.temperature_2m[i], dew:H.dew_point_2m[i],
+      rain:H.precipitation_probability[i], code:H.weather_code[i], cloud:H.cloud_cover[i],
+      vis:H.visibility[i], isDay:H.is_day[i], kp:k?k.kp:null};
+    h.base = (h.temp-h.dew)*125;  // base de nubes estimada (m)
+    Object.assign(h, evaluate(h));
+    return h;
+  });
+  const sun = {};
+  w.daily.time.forEach((d,i)=>sun[d]={rise:w.daily.sunrise[i].slice(11), set:w.daily.sunset[i].slice(11)});
+  return {hours, sun, fetched:Date.now()};
+}
+
+/* ---------- Reglas de vuelo ---------- */
+function evaluate(h){
+  const r = [], L = {};
+  const chk = (key, val, max, label, warnAt=0.8) => {
+    if(val==null) return;
+    if(val > max){ r.push([2,label]); L[key]=2; }
+    else if(val > max*warnAt){ r.push([1,label]); L[key]=1; }
+    else L[key]=0;
+  };
+  chk('wind', h.wind, cfg.windMax, `Viento de ${fmt(h.wind)} m/s a ${cfg.alt} m`);
+  chk('gust', h.gust, cfg.gustMax, `Ráfagas de ${fmt(h.gust)} m/s`);
+  chk('rain', h.rain, cfg.rainMax, `${h.rain}% de probabilidad de lluvia`, 0.5);
+  if(h.code>=95){ r.push([2,'Tormenta eléctrica']); L.rain=2; }
+  else if(h.code>=51){ r.push([2,'Precipitación (el Mini SE no es resistente al agua)']); L.rain=2; }
+
+  if(h.temp < cfg.tMin || h.temp > cfg.tMax){ r.push([2,`Temperatura de ${fmt(h.temp,0)} °C, fuera del rango`]); L.temp=2; }
+  else if(h.temp < cfg.tMin+5){ r.push([1,`Frío (${fmt(h.temp,0)} °C): la batería rinde menos, calentala antes`]); L.temp=1; }
+  else L.temp=0;
+
+  if(h.vis!=null){
+    if(h.vis<1000){ r.push([2,'Visibilidad menor a 1 km']); L.vis=2; }
+    else if(h.vis<3000){ r.push([1,'Visibilidad reducida']); L.vis=1; }
+    else L.vis=0;
+  }
+  if(h.temp-h.dew <= 2){ r.push([1,'Aire casi saturado: posible niebla o condensación']); L.dew=1; } else L.dew=0;
+  if(h.kp!=null){
+    if(h.kp>=cfg.kpMax){ r.push([2,`Kp ${fmt(h.kp)}: GPS y brújula poco confiables`]); L.kp=2; }
+    else if(h.kp>=cfg.kpMax-1){ r.push([1,`Kp ${fmt(h.kp)}: actividad geomagnética moderada`]); L.kp=1; }
+    else L.kp=0;
+  }
+  if(!h.isDay){ r.push([cfg.night?1:2,'Es de noche']); L.night=cfg.night?1:2; }
+
+  r.sort((a,b)=>b[0]-a[0]);
+  return {level: r.length ? r[0][0] : 0, reasons:r, L};
+}
+
+const SKY = c => c===0?'Despejado':c<=2?'Parcialmente nublado':c===3?'Nublado':c<=48?'Niebla':
+  c<=57?'Llovizna':c<=67?'Lluvia':c<=77?'Nieve':c<=82?'Chaparrones':c<=86?'Nevadas':'Tormenta';
+const CARD = d => ['N','NE','E','SE','S','SO','O','NO'][Math.round(d/45)%8];
+
+function bestWindow(list){
+  let best=null, cur=null;
+  for(const h of list){
+    if(h.level===0 && h.ts>Date.now()-3600e3){ cur = cur ? {...cur,end:h.hour} : {start:h.hour,end:h.hour}; }
+    else cur=null;
+    if(cur && (!best || cur.end-cur.start > best.end-best.start)) best={...cur};
+  }
+  return best;
+}
+
+/* ---------- Pantalla ---------- */
+function render(){
+  const app = $('#app'); if(!data) return;
+  const days = [...new Set(data.hours.map(h=>h.day))];
+  if(!selDay || !days.includes(selDay)) selDay = days[0];
+  const list = data.hours.filter(h=>h.day===selDay);
+  if(selIdx==null || data.hours[selIdx].day!==selDay){
+    const now = Date.now();
+    const cand = list.find(h=>h.ts+3600e3>now) || list.find(h=>h.hour===10) || list[0];
+    selIdx = data.hours.indexOf(cand);
+  }
+  const h = data.hours[selIdx], sun = data.sun[selDay] || {};
+  const dayName = d => new Date(d+'T12:00:00Z').toLocaleDateString('es-AR',{weekday:'short',day:'numeric',timeZone:'UTC'});
+  const lv = k => h.L[k]==null ? '' : 'l'+h.L[k];
+  const win = bestWindow(list);
+  const shown = h.reasons.slice(0,4);
+
+  app.innerHTML = `
+  <section class="verdict l${h.level}" aria-live="polite">
+    <p class="when">${dayName(h.day)}, ${String(h.hour).padStart(2,'0')}:00 h</p>
+    <h1>${LEVEL_TXT[h.level]}</h1>
+    <ul>${shown.length ? shown.map(x=>`<li>${x[1]}</li>`).join('') : '<li>Todas las condiciones dentro de los límites de tu dron</li>'}</ul>
+  </section>
+
+  <nav class="days" aria-label="Día">${days.map(d=>{
+    const dh = data.hours.filter(x=>x.day===d && x.hour>=6 && x.hour<=21);
+    return `<button data-day="${d}" aria-pressed="${d===selDay}">${dayName(d)}
+      <span class="bar">${dh.map(x=>`<i style="background:var(--${['go','warn','no'][x.level]})"></i>`).join('')}</span></button>`;
+  }).join('')}</nav>
+
+  <div class="hours" id="hours" role="group" aria-label="Hora">${list.map(x=>{
+    const i = data.hours.indexOf(x);
+    return `<button class="l${x.level} ${x.ts+3600e3<Date.now()?'past':''}" data-i="${i}" aria-pressed="${i===selIdx}"
+      aria-label="${x.hour} horas, ${LEVEL_TXT[x.level]}">${String(x.hour).padStart(2,'0')}<i></i></button>`;
+  }).join('')}</div>
+  <p class="window">${win ? `Mejor ventana del día: <b>${String(win.start).padStart(2,'0')}:00 a ${String(win.end+1).padStart(2,'0')}:00 h</b>` : 'Sin horas aptas en este día.'}</p>
+
+  <section class="grid">
+    <div class="tile ${lv('wind')}"><div class="k">Viento a ${cfg.alt} m</div>
+      <div class="v">${fmt(h.wind)} <small>m/s</small></div><div class="s">${fmt(h.wind*3.6,0)} km/h · límite ${fmt(cfg.windMax)}</div></div>
+    <div class="tile ${lv('gust')}"><div class="k">Ráfagas${cfg.alt==10?'':' (estimadas)'}</div>
+      <div class="v">${fmt(h.gust)} <small>m/s</small></div><div class="s">${fmt(h.gust*3.6,0)} km/h · límite ${fmt(cfg.gustMax)}</div></div>
+    <div class="tile"><div class="k">Dirección del viento</div>
+      <div class="v"><span class="arrow" style="transform:rotate(${h.dir+180}deg)">↑</span> ${CARD(h.dir)}</div><div class="s">Viene del ${CARD(h.dir)} (${Math.round(h.dir)}°)</div></div>
+    <div class="tile ${lv('temp')}"><div class="k">Temperatura</div>
+      <div class="v">${fmt(h.temp,0)} <small>°C</small></div><div class="s">Punto de rocío ${fmt(h.dew,0)} °C</div></div>
+    <div class="tile ${lv('rain')}"><div class="k">Lluvia</div>
+      <div class="v">${h.rain??'—'} <small>%</small></div><div class="s">${SKY(h.code)}</div></div>
+    <div class="tile"><div class="k">Nubosidad</div>
+      <div class="v">${h.cloud} <small>%</small></div><div class="s">Base estimada ${fmt(Math.max(0,h.base),0)} m</div></div>
+    <div class="tile ${lv('vis')}"><div class="k">Visibilidad</div>
+      <div class="v">${h.vis==null?'—':fmt(h.vis/1000,0)} <small>km</small></div><div class="s">Mantené el dron a la vista</div></div>
+    <div class="tile ${lv('kp')}"><div class="k">Índice Kp</div>
+      <div class="v">${fmt(h.kp,2)}</div><div class="s">${h.kp==null?'Sin datos de NOAA':'Tormenta geomagnética desde 5'}</div></div>
+    <div class="tile ${lv('night')}" style="grid-column:1/-1"><div class="k">Sol</div>
+      <div class="v"><small>Sale</small> ${sun.rise||'—'} <small>&nbsp;Se pone</small> ${sun.set||'—'}</div></div>
+  </section>
+
+  <p class="foot">Datos: Open-Meteo y NOAA SWPC · actualizado ${new Date(data.fetched).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}
+    <button id="refresh">Actualizar</button></p>`;
+
+  app.querySelectorAll('[data-day]').forEach(b=>b.onclick=()=>{selDay=b.dataset.day; selIdx=null; render();});
+  app.querySelectorAll('[data-i]').forEach(b=>b.onclick=()=>{selIdx=+b.dataset.i; render();});
+  $('#refresh').onclick = load;
+  const cur = $('#hours [aria-pressed=true]'); if(cur) $('#hours').scrollLeft = cur.offsetLeft - 60;
+}
+
+async function load(){
+  $('#locName').textContent = loc.name; $('#locSub').textContent = loc.sub || 'Tocá para cambiar la ubicación';
+  if(!data) $('#app').innerHTML = '<p class="msg">Cargando pronóstico…</p>';
+  try{
+    const [w,kp] = await Promise.all([fetchWeather(), fetchKp()]);
+    data = build(w, kp); render();
+  }catch(e){
+    $('#app').innerHTML = `<p class="msg">No se pudo descargar el pronóstico. Revisá la conexión y tocá Reintentar.<br><br>
+      <button class="btn primary" id="retry">Reintentar</button></p>`;
+    $('#retry').onclick = load;
+  }
+}
+
+/* ---------- Ubicación ---------- */
+$('#locBtn').onclick = () => $('#locDlg').showModal();
+$('#locClose').onclick = () => $('#locDlg').close();
+$('#gpsBtn').onclick = () => {
+  if(!navigator.geolocation) return alert('Este navegador no permite ubicación.');
+  $('#gpsBtn').textContent = 'Buscando…';
+  navigator.geolocation.getCurrentPosition(p=>{
+    loc = {name:'Mi ubicación', sub:`${p.coords.latitude.toFixed(3)}, ${p.coords.longitude.toFixed(3)}`,
+           lat:p.coords.latitude, lon:p.coords.longitude};
+    store.set('loc',loc); $('#gpsBtn').textContent='Usar mi ubicación actual'; $('#locDlg').close(); data=null; load();
+  }, ()=>{ $('#gpsBtn').textContent='Usar mi ubicación actual'; alert('No se pudo obtener la ubicación. Revisá el permiso de ubicación del navegador.'); },
+  {enableHighAccuracy:true, timeout:15000});
+};
+let qTimer;
+$('#q').oninput = e => {
+  clearTimeout(qTimer); const q = e.target.value.trim();
+  if(q.length<3){ $('#res').innerHTML=''; return; }
+  qTimer = setTimeout(async()=>{
+    try{
+      const r = await fetch('https://geocoding-api.open-meteo.com/v1/search?'+new URLSearchParams({name:q,count:6,language:'es'}));
+      const j = await r.json();
+      $('#res').innerHTML = (j.results||[]).map((x,i)=>`<li><button data-g="${i}">${x.name}<br><small>${[x.admin2,x.admin1,x.country].filter(Boolean).join(', ')}</small></button></li>`).join('')
+        || '<li class="hint">Sin resultados. Probá con otro nombre.</li>';
+      $('#res').querySelectorAll('[data-g]').forEach(b=>b.onclick=()=>{
+        const x = j.results[+b.dataset.g];
+        loc = {name:x.name, sub:[x.admin1,x.country].filter(Boolean).join(', '), lat:x.latitude, lon:x.longitude};
+        store.set('loc',loc); $('#locDlg').close(); data=null; load();
+      });
+    }catch{ $('#res').innerHTML='<li class="hint">No se pudo buscar. Revisá la conexión.</li>'; }
+  },350);
+};
+
+/* ---------- Ajustes ---------- */
+const form = $('#setForm');
+const fillForm = c => Object.keys(MINI_SE).forEach(k=>form.elements[k].value=c[k]);
+$('#setBtn').onclick = () => { fillForm(cfg); $('#setDlg').showModal(); };
+$('#resetBtn').onclick = () => fillForm(MINI_SE);
+form.onsubmit = () => {
+  Object.keys(MINI_SE).forEach(k=>cfg[k]=+form.elements[k].value);
+  store.set('cfg',cfg); load();
+};
+
+if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+load();
+</script>
+</body>
+</html>
